@@ -1,6 +1,9 @@
 package frafka
 
 import (
+	"errors"
+
+	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"github.com/gofrs/uuid"
 	"github.com/qntfy/frizzle"
 	"github.com/spf13/viper"
@@ -23,4 +26,34 @@ func InitByViper(v *viper.Viper) (frizzle.Frizzle, error) {
 func generateID() string {
 	id, _ := uuid.NewV4()
 	return id.String()
+}
+
+// initBaseKafkaConfig using common paths for both source and sink.
+// Order of priority for kafka config:
+// 1. Explicitly set keys specific to source / sink (set in their constructors)
+// 2. arbitrary config set via environment variable from kafka_config
+// 3. arbitrary config from kafka_config_file
+// (We set the config in reverse order so the higher priority will override if set)
+func initBaseKafkaConfig(v *viper.Viper) (*kafka.ConfigMap, error) {
+	kCfg := kafka.ConfigMap{}
+
+	if v.IsSet("kafka_config_file") {
+		kafkaCfgFile := viper.New()
+		kafkaCfgFile.SetConfigFile(v.GetString("kafka_config_file"))
+		if err := kafkaCfgFile.ReadInConfig(); err != nil {
+			if _, ok := err.(viper.ConfigFileNotFoundError); ok {
+				return nil, errors.New("no file found at provided kafka_config_file path")
+			}
+			return nil, err
+		}
+		for k, v := range kafkaCfgFile.AllSettings() {
+			kCfg.SetKey(k, kafka.ConfigValue(v))
+		}
+	}
+
+	for _, c := range v.GetStringSlice("kafka_config") {
+		kCfg.Set(c)
+	}
+
+	return &kCfg, nil
 }

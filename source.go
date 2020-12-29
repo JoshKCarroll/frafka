@@ -18,9 +18,15 @@ var (
 )
 
 var (
-	kafkaEventChannelSize = 100
 	kafkaSessionTimeoutMS = 6000
 	stopCloseTimeout      = 3 * time.Second
+
+	defaultSourceKafkaCfg = kafka.ConfigMap{
+		"session.timeout.ms":              kafkaSessionTimeoutMS,
+		"go.events.channel.enable":        true, // support c.Events()
+		"go.events.channel.size":          100,
+		"go.application.rebalance.enable": true, // we handle partition updates (needed for offset management
+	}
 )
 
 // Source encapsulates a kafka consumer for receiving and tracking Msgs
@@ -34,39 +40,51 @@ type Source struct {
 	evtChan  chan frizzle.Event
 }
 
-// InitSource initializes a kafka Source
-func InitSource(config *viper.Viper) (*Source, error) {
+// initSourceKafkaConfig does the heavy lifting for building out a kafka config for Source Consumer
+// across possible configuration sources. It is extracted from InitSource for ease of unit testing.
+func initSourceKafkaConfig(config *viper.Viper) (*kafka.ConfigMap, error) {
 	if !config.IsSet("kafka_brokers") || !config.IsSet("kafka_topics") || !config.IsSet("kafka_consumer_group") {
 		return nil, errors.New("brokers, topics and consumer_group must be set for kafka Source")
 	}
 
-	startOffset := "earliest"
-	if config.GetBool("kafka_consume_latest_first") {
-		startOffset = "latest"
+	kCfg, err := initBaseKafkaConfig(config)
+	if err != nil {
+		return nil, err
 	}
+
 	brokers := strings.Join(config.GetStringSlice("kafka_brokers"), ",")
+	kCfg.SetKey("bootstrap.servers", brokers)
 
-	config.SetDefault("kafka_max_buffer_kb", 16384) // 16MB
-	maxBufferKB := config.GetInt("kafka_max_buffer_kb")
+	kCfg.SetKey("group.id", config.GetString("kafka_consumer_group"))
 
-	additionalConfig := config.GetStringSlice("kafka_config")
-
-	kCfg := kafka.ConfigMap{
-		"bootstrap.servers":               brokers, // expects CSV
-		"group.id":                        config.GetString("kafka_consumer_group"),
-		"session.timeout.ms":              kafkaSessionTimeoutMS,
-		"go.events.channel.enable":        true, // support c.Events()
-		"go.events.channel.size":          kafkaEventChannelSize,
-		"go.application.rebalance.enable": true,        // we handle partition updates (needed for offset management)
-		"queued.max.messages.kbytes":      maxBufferKB, // limit memory usage for the consumer prefetch buffer; note there is one buffer per topic+partition
-		"auto.offset.reset":               startOffset,
+	if config.IsSet("kafka_max_buffer_kb") {
+		kCfg.SetKey("queued.max.messages.kbytes", config.GetInt("kafka_max_buffer_kb"))
+	} else if maxBuffer, _ := kCfg.Get("queued.max.messages.kbytes", nil); maxBuffer == nil {
+		// Want to set a default 16MB if not set explicitly elsewhere
+		kCfg.SetKey("queued.max.messages.kbytes", 16384)
 	}
 
-	for _, c := range additionalConfig {
-		kCfg.Set(c)
+	if config.GetBool("kafka_consume_latest_first") {
+		kCfg.SetKey("auto.offset.reset", "latest")
+	} else if startOffset, _ := kCfg.Get("auto.offset.reset", nil); startOffset == nil {
+		// default to "earliest" if not set explicitly elsewhere
+		kCfg.SetKey("auto.offset.reset", "earliest")
 	}
 
-	c, err := kafka.NewConsumer(&kCfg)
+	for k, v := range defaultSourceKafkaCfg {
+		if existingVal, _ := kCfg.Get(k, nil); existingVal == nil {
+			kCfg.SetKey(k, v)
+		}
+	}
+
+	return kCfg, nil
+}
+
+// InitSource initializes a kafka Source
+func InitSource(config *viper.Viper) (*Source, error) {
+	kCfg, err := initSourceKafkaConfig(config)
+
+	c, err := kafka.NewConsumer(kCfg)
 	if err != nil {
 		return nil, err
 	}
