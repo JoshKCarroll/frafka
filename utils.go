@@ -34,11 +34,12 @@ func generateID() string {
 // 2. arbitrary config set via environment variable from kafka_config
 // 3. arbitrary config from kafka_config_file
 // (We set the config in reverse order so the higher priority will override if set)
-func initBaseKafkaConfig(v *viper.Viper) (*kafka.ConfigMap, error) {
+func initBaseKafkaConfig(v *viper.Viper, defaultKafkaCfg *kafka.ConfigMap) (*kafka.ConfigMap, error) {
 	kCfg := kafka.ConfigMap{}
 
 	if v.IsSet("kafka_config_file") {
-		kafkaCfgFile := viper.New()
+		// set KeyDelimiter since the default is "." which is used in kafka config keys
+		kafkaCfgFile := viper.NewWithOptions(viper.KeyDelimiter("|||"))
 		kafkaCfgFile.SetConfigFile(v.GetString("kafka_config_file"))
 		if err := kafkaCfgFile.ReadInConfig(); err != nil {
 			if _, ok := err.(viper.ConfigFileNotFoundError); ok {
@@ -53,6 +54,12 @@ func initBaseKafkaConfig(v *viper.Viper) (*kafka.ConfigMap, error) {
 
 	for _, c := range v.GetStringSlice("kafka_config") {
 		kCfg.Set(c)
+	}
+
+	for k, v := range *defaultKafkaCfg {
+		if existingVal, _ := kCfg.Get(k, nil); existingVal == nil {
+			kCfg.SetKey(k, v)
+		}
 	}
 
 	return &kCfg, nil

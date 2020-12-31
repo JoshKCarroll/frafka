@@ -18,13 +18,21 @@ var (
 		{
 			name: "basic test",
 			viperVals: map[string]interface{}{
-				"kafka_brokers":     "0.0.0.0:9092",
-				"kafka_compression": "snappy",
-				"kafka_config":      "linger.ms=1000 receive.message.max.bytes=2000000",
+				"kafka_brokers": "0.0.0.0:9092",
 			},
 			expectedConfig: kafka.ConfigMap{
 				"bootstrap.servers":          "0.0.0.0:9092",
-				"compression.type":           "snappy",
+				"queued.max.messages.kbytes": 16384,
+			},
+		},
+		{
+			name: "with config var",
+			viperVals: map[string]interface{}{
+				"kafka_brokers": "0.0.0.0:9092",
+				"kafka_config":  "linger.ms=1000 receive.message.max.bytes=2000000",
+			},
+			expectedConfig: kafka.ConfigMap{
+				"bootstrap.servers":          "0.0.0.0:9092",
 				"queued.max.messages.kbytes": 16384,
 				"linger.ms":                  "1000",
 				"receive.message.max.bytes":  "2000000",
@@ -33,8 +41,7 @@ var (
 		{
 			name: "missing brokers",
 			viperVals: map[string]interface{}{
-				"kafka_compression": "snappy",
-				"kafka_config":      "linger.ms=1000 receive.message.max.bytes=2000000",
+				"kafka_config": "linger.ms=1000 receive.message.max.bytes=2000000",
 			},
 			isError: true,
 		},
@@ -45,6 +52,49 @@ var (
 				"kafka_config_file": "/not/a/file/path.yaml",
 			},
 			isError: true,
+		},
+		{
+			name: "with config file and config var",
+			viperVals: map[string]interface{}{
+				"kafka_brokers":     "0.0.0.0:9092",
+				"kafka_config":      "linger.ms=1000 receive.message.max.bytes=2000000",
+				"kafka_config_file": "./example_kafka_config.yaml",
+			},
+			expectedConfig: kafka.ConfigMap{
+				"bootstrap.servers":          "0.0.0.0:9092",
+				"queued.max.messages.kbytes": 16384,
+				"linger.ms":                  "1000",
+				"receive.message.max.bytes":  "2000000",
+				"compression.type":           "snappy",
+				"fetch.max.bytes":            1000000,
+				"security.protocol":          "ssl",
+			},
+		},
+		{
+			name: "with config file",
+			viperVals: map[string]interface{}{
+				"kafka_brokers":     "0.0.0.0:9092",
+				"kafka_config_file": "./example_kafka_config.yaml",
+			},
+			expectedConfig: kafka.ConfigMap{
+				"bootstrap.servers":          "0.0.0.0:9092",
+				"queued.max.messages.kbytes": 16384,
+				"compression.type":           "snappy",
+				"fetch.max.bytes":            1000000,
+				"security.protocol":          "ssl",
+			},
+		},
+		{
+			name: "override defaults",
+			viperVals: map[string]interface{}{
+				"kafka_brokers": "0.0.0.0:9092",
+				"kafka_config":  "linger.ms=1000 queued.max.messages.kbytes=2048",
+			},
+			expectedConfig: kafka.ConfigMap{
+				"bootstrap.servers":          "0.0.0.0:9092",
+				"queued.max.messages.kbytes": "2048",
+				"linger.ms":                  "1000",
+			},
 		},
 	}
 )
@@ -79,6 +129,24 @@ var (
 				"kafka_brokers":        "0.0.0.0:9092",
 				"kafka_consumer_group": "cg-123",
 				"kafka_topics":         "topic.0",
+			},
+			expectedConfig: kafka.ConfigMap{
+				"bootstrap.servers":               "0.0.0.0:9092",
+				"group.id":                        "cg-123",
+				"auto.offset.reset":               "earliest",
+				"queued.max.messages.kbytes":      16384,
+				"session.timeout.ms":              6000,
+				"go.events.channel.enable":        true,
+				"go.events.channel.size":          100,
+				"go.application.rebalance.enable": true,
+			},
+		},
+		{
+			name: "with config var",
+			viperVals: map[string]interface{}{
+				"kafka_brokers":        "0.0.0.0:9092",
+				"kafka_consumer_group": "cg-123",
+				"kafka_topics":         "topic.0",
 				"kafka_config":         "linger.ms=1000 receive.message.max.bytes=2000000",
 			},
 			expectedConfig: kafka.ConfigMap{
@@ -97,8 +165,7 @@ var (
 		{
 			name: "missing required config",
 			viperVals: map[string]interface{}{
-				"kafka_compression": "snappy",
-				"kafka_config":      "linger.ms=1000 receive.message.max.bytes=2000000",
+				"kafka_config": "linger.ms=1000 receive.message.max.bytes=2000000",
 			},
 			isError: true,
 		},
@@ -108,9 +175,76 @@ var (
 				"kafka_brokers":        "0.0.0.0:9092",
 				"kafka_consumer_group": "cg-123",
 				"kafka_topics":         "topic.0",
+				"kafka_config":         "linger.ms=1000 receive.message.max.bytes=2000000",
 				"kafka_config_file":    "/not/a/file/path.yaml",
 			},
 			isError: true,
+		},
+		{
+			name: "with config file and config var",
+			viperVals: map[string]interface{}{
+				"kafka_brokers":        "0.0.0.0:9092",
+				"kafka_consumer_group": "cg-123",
+				"kafka_topics":         "topic.0",
+				"kafka_config":         "linger.ms=1000 receive.message.max.bytes=2000000",
+				"kafka_config_file":    "./example_kafka_config.yaml",
+			},
+			expectedConfig: kafka.ConfigMap{
+				"bootstrap.servers":               "0.0.0.0:9092",
+				"group.id":                        "cg-123",
+				"linger.ms":                       "1000",
+				"receive.message.max.bytes":       "2000000",
+				"auto.offset.reset":               "earliest",
+				"queued.max.messages.kbytes":      16384,
+				"session.timeout.ms":              6000,
+				"go.events.channel.enable":        true,
+				"go.events.channel.size":          100,
+				"go.application.rebalance.enable": true,
+				"compression.type":                "snappy",
+				"fetch.max.bytes":                 1000000,
+				"security.protocol":               "ssl",
+			},
+		},
+		{
+			name: "with config file",
+			viperVals: map[string]interface{}{
+				"kafka_brokers":        "0.0.0.0:9092",
+				"kafka_consumer_group": "cg-123",
+				"kafka_topics":         "topic.0",
+				"kafka_config_file":    "./example_kafka_config.yaml",
+			},
+			expectedConfig: kafka.ConfigMap{
+				"bootstrap.servers":               "0.0.0.0:9092",
+				"group.id":                        "cg-123",
+				"auto.offset.reset":               "earliest",
+				"queued.max.messages.kbytes":      16384,
+				"session.timeout.ms":              6000,
+				"go.events.channel.enable":        true,
+				"go.events.channel.size":          100,
+				"go.application.rebalance.enable": true,
+				"compression.type":                "snappy",
+				"fetch.max.bytes":                 1000000,
+				"security.protocol":               "ssl",
+			},
+		},
+		{
+			name: "override defaults",
+			viperVals: map[string]interface{}{
+				"kafka_brokers":        "0.0.0.0:9092",
+				"kafka_consumer_group": "cg-123",
+				"kafka_topics":         "topic.0",
+				"kafka_config":         "auto.offset.reset=latest session.timeout.ms=2000",
+			},
+			expectedConfig: kafka.ConfigMap{
+				"bootstrap.servers":               "0.0.0.0:9092",
+				"group.id":                        "cg-123",
+				"auto.offset.reset":               "latest",
+				"queued.max.messages.kbytes":      16384,
+				"session.timeout.ms":              "2000",
+				"go.events.channel.enable":        true,
+				"go.events.channel.size":          100,
+				"go.application.rebalance.enable": true,
+			},
 		},
 	}
 )

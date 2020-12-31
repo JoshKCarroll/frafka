@@ -21,11 +21,13 @@ var (
 	kafkaSessionTimeoutMS = 6000
 	stopCloseTimeout      = 3 * time.Second
 
-	defaultSourceKafkaCfg = kafka.ConfigMap{
+	defaultSourceKafkaCfg = &kafka.ConfigMap{
 		"session.timeout.ms":              kafkaSessionTimeoutMS,
 		"go.events.channel.enable":        true, // support c.Events()
 		"go.events.channel.size":          100,
 		"go.application.rebalance.enable": true, // we handle partition updates (needed for offset management
+		"auto.offset.reset":               "earliest",
+		"queued.max.messages.kbytes":      16384,
 	}
 )
 
@@ -47,7 +49,7 @@ func initSourceKafkaConfig(config *viper.Viper) (*kafka.ConfigMap, error) {
 		return nil, errors.New("brokers, topics and consumer_group must be set for kafka Source")
 	}
 
-	kCfg, err := initBaseKafkaConfig(config)
+	kCfg, err := initBaseKafkaConfig(config, defaultSourceKafkaCfg)
 	if err != nil {
 		return nil, err
 	}
@@ -56,26 +58,6 @@ func initSourceKafkaConfig(config *viper.Viper) (*kafka.ConfigMap, error) {
 	kCfg.SetKey("bootstrap.servers", brokers)
 
 	kCfg.SetKey("group.id", config.GetString("kafka_consumer_group"))
-
-	if config.IsSet("kafka_max_buffer_kb") {
-		kCfg.SetKey("queued.max.messages.kbytes", config.GetInt("kafka_max_buffer_kb"))
-	} else if maxBuffer, _ := kCfg.Get("queued.max.messages.kbytes", nil); maxBuffer == nil {
-		// Want to set a default 16MB if not set explicitly elsewhere
-		kCfg.SetKey("queued.max.messages.kbytes", 16384)
-	}
-
-	if config.GetBool("kafka_consume_latest_first") {
-		kCfg.SetKey("auto.offset.reset", "latest")
-	} else if startOffset, _ := kCfg.Get("auto.offset.reset", nil); startOffset == nil {
-		// default to "earliest" if not set explicitly elsewhere
-		kCfg.SetKey("auto.offset.reset", "earliest")
-	}
-
-	for k, v := range defaultSourceKafkaCfg {
-		if existingVal, _ := kCfg.Get(k, nil); existingVal == nil {
-			kCfg.SetKey(k, v)
-		}
-	}
 
 	return kCfg, nil
 }

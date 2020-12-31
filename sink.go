@@ -18,6 +18,10 @@ var (
 var (
 	// how long to wait for messages to flush
 	flushTimeoutMS = 10 * 1000
+
+	defaultSinkKafkaCfg = &kafka.ConfigMap{
+		"queued.max.messages.kbytes": 16384,
+	}
 )
 
 // Sink encapsulates a kafka producer for Sending Msgs
@@ -63,24 +67,13 @@ func initSinkKafkaConfig(config *viper.Viper) (*kafka.ConfigMap, error) {
 		return nil, errors.New("brokers must be set for kafka Sink")
 	}
 
-	kCfg, err := initBaseKafkaConfig(config)
+	kCfg, err := initBaseKafkaConfig(config, defaultSinkKafkaCfg)
 	if err != nil {
 		return nil, err
 	}
 
 	brokers := strings.Join(config.GetStringSlice("kafka_brokers"), ",")
 	kCfg.SetKey("bootstrap.servers", brokers)
-
-	if config.IsSet("kafka_max_buffer_kb") {
-		kCfg.SetKey("queued.max.messages.kbytes", config.GetInt("kafka_max_buffer_kb"))
-	} else if maxBuffer, _ := kCfg.Get("queued.max.messages.kbytes", nil); maxBuffer == nil {
-		// Want to set a default 16MB if not set explicitly elsewhere
-		kCfg.SetKey("queued.max.messages.kbytes", 16384)
-	}
-
-	if config.IsSet("kafka_compression") {
-		kCfg.SetKey("compression.type", config.GetString("kafka_compression"))
-	}
 
 	return kCfg, nil
 }
