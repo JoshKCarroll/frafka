@@ -98,6 +98,16 @@ optional values - if `bootstrap.servers` is set in `KAFKA_CONFIG` to a different
 compression. This functionality has been removed to simplify config logic and reduce confusion if values are set in multiple
 places.
 
+#### Suggested Kafka Config
+
+Some values that we commonly set, particularly in a memory constrained environment (e.g. running a producer/consumer service against a 9 partition topic with average message size less than 10KB and less than 200MB memory available).
+
+* queued.max.messages.kbytes: 2048 (up to 16384)
+* auto.offset.reset: (latest|earliest)
+* receive.message.max.bytes: 2000000
+* fetch.max.bytes: 1000000
+* compression.type: snappy (and possibly linger.ms value depending on throughput/latency requirements) are great to set to reduce network traffic and disk usage on brokers
+
 ## Async Error Handling
 
 Since records are sent in batch fashion, Kafka may report errors or other information asynchronously.
